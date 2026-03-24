@@ -152,6 +152,7 @@
       <span>Szybciej</span>
     </div>
     <div class="text-ink-faint text-xs font-mono ml-3 min-w-[80px] text-center" id="stepCounter">Krok 0 / 0</div>
+    <button class="btn-ctrl" id="btnSound" onclick="toggleSound()" title="Dźwięk">🔊</button>
   </div>
 </div>
 
@@ -193,6 +194,54 @@
 
 <script>
 const codeLines = [
+let audioCtx = null;
+let soundEnabled = true;
+
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playTone(freq, duration, type, vol, delay) {
+  if (!audioCtx || !soundEnabled) return;
+  const t = audioCtx.currentTime + (delay || 0);
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type || 'sine';
+  osc.frequency.setValueAtTime(freq, t);
+  gain.gain.setValueAtTime(vol || 0.06, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(t); osc.stop(t + duration);
+}
+
+function playNoise(duration, vol, delay) {
+  if (!audioCtx || !soundEnabled) return;
+  const t = audioCtx.currentTime + (delay || 0);
+  const len = audioCtx.sampleRate * duration;
+  const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const g = audioCtx.createGain();
+  const f = audioCtx.createBiquadFilter();
+  f.type = 'bandpass'; f.frequency.value = 3000; f.Q.value = 0.5;
+  g.gain.setValueAtTime(vol || 0.04, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + duration);
+  src.connect(f); f.connect(g); g.connect(audioCtx.destination);
+  src.start(t); src.stop(t + duration);
+}
+
+function sndTick()    { playTone(1100, 0.05, 'sine', 0.04); }
+function sndCompare() { playTone(660, 0.06, 'sine', 0.035); playTone(880, 0.04, 'sine', 0.02, 0.03); }
+function sndPivot()   { playTone(520, 0.1, 'triangle', 0.06); playTone(780, 0.07, 'sine', 0.03, 0.06); }
+function sndReorder() { playNoise(0.08, 0.05); playTone(500, 0.06, 'triangle', 0.03, 0.04); }
+function sndColor()   { playTone(1400, 0.035, 'sine', 0.025); }
+function sndPivotPlace() { playTone(440, 0.12, 'sine', 0.05); playTone(660, 0.08, 'sine', 0.03, 0.08); }
+function sndDone()    { playTone(523, 0.15, 'sine', 0.06); playTone(659, 0.12, 'sine', 0.05, 0.12); playTone(784, 0.2, 'sine', 0.04, 0.22); }
+function sndPartition() { playTone(330, 0.08, 'triangle', 0.04); }
+function sndMerge()   { playTone(400, 0.06, 'sine', 0.03); playTone(500, 0.05, 'sine', 0.02, 0.04); }
   { ln: 1,  html: '<span class="text-[#a47bcf]">def</span> <span class="text-[#7ba4d4]">szybkie_sortowanie</span>(<span class="text-ink">lista</span>):' },
   { ln: 2,  html: '    <span class="text-[#a47bcf]">if</span> <span class="text-[#7ba4d4]">len</span>(<span class="text-ink">lista</span>) <= <span class="text-amber">1</span>:' },
   { ln: 3,  html: '        <span class="text-[#a47bcf]">return</span> <span class="text-ink">lista</span>' },
@@ -453,6 +502,20 @@ function renderTree(treeData) {
   container.scrollTop = container.scrollHeight;
 }
 
+function playStepSound(step) {
+  const desc = step.description;
+  const cl = step.codeLines;
+
+  if (desc.includes('Sortowanie zakończone')) { sndDone(); return; }
+  if (cl[0] === 5) { sndPivot(); return; }
+  if (desc.includes('Porównujemy')) { sndCompare(); return; }
+  if (desc.includes('Przestawiamy')) { sndReorder(); return; }
+  if (desc.includes('Podział zakończony')) { sndPartition(); return; }
+  if (desc.includes('jest teraz na swojej')) { sndPivotPlace(); return; }
+  if (desc.includes('Łączenie')) { sndMerge(); return; }
+  if (cl[0] === 2 || cl[0] === 3) { sndTick(); return; }
+}
+
 function renderStep() {
   if (currentStep < 0 || currentStep >= steps.length) return;
   const step = steps[currentStep];
@@ -464,6 +527,7 @@ function renderStep() {
   document.getElementById('progressFill').style.width = ((currentStep + 1) / steps.length) * 100 + '%';
   document.getElementById('btnPrev').style.opacity = currentStep === 0 ? '0.35' : '1';
   document.getElementById('btnNext').style.opacity = currentStep === steps.length - 1 ? '0.35' : '1';
+  playStepSound(step);
 }
 
 function nextStep() {
@@ -512,6 +576,16 @@ function resetVis() {
   currentStep = 0;
   renderStep();
 }
+
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  document.getElementById('btnSound').textContent = soundEnabled ? '🔊' : '🔇';
+}
+
+// ==================== AUDIO INIT ====================
+['click', 'keydown'].forEach(evt => {
+  document.addEventListener(evt, () => initAudio(), { once: true });
+});
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight' || e.key === 'n') nextStep();
