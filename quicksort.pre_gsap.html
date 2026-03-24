@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wizualizacja Quicksort</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          display: ['"Playfair Display"', 'Georgia', 'serif'],
+          body: ['"DM Sans"', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'monospace'],
+        },
+        colors: {
+          surface: { DEFAULT: '#141413', raised: '#1c1c1a', overlay: '#242422' },
+          ink: { DEFAULT: '#f0ece4', dim: '#8a857c', faint: '#5a5650' },
+          amber: { DEFAULT: '#d4a24e', bright: '#e8b85c', glow: '#d4a24e33' },
+          bar: {
+            idle: '#3d3b37',
+            pivot: '#d4a24e',
+            comparing: '#7ba4d4',
+            smaller: '#6bbd8a',
+            larger: '#d46b6b',
+            sorted: '#a47bcf',
+          }
+        }
+      }
+    }
+  }
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { font-family: 'DM Sans', sans-serif; background: #0e0e0d; color: #f0ece4; }
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #3d3b37; border-radius: 3px; }
+
+  .bar {
+    width: 44px;
+    border-radius: 2px 2px 0 0;
+    transition: height 0.45s cubic-bezier(.22,1,.36,1),
+                background 0.3s,
+                box-shadow 0.3s,
+                transform 0.25s;
+  }
+  .bar.idle     { background: #3d3b37; }
+  .bar.pivot    { background: #d4a24e; box-shadow: 0 0 24px #d4a24e44, inset 0 1px 0 #e8b85c55; transform: scaleY(1.04); }
+  .bar.comparing { background: #7ba4d4; box-shadow: 0 0 18px #7ba4d433; }
+  .bar.smaller  { background: #6bbd8a; box-shadow: 0 0 16px #6bbd8a22; }
+  .bar.larger   { background: #d46b6b; box-shadow: 0 0 16px #d46b6b22; }
+  .bar.sorted   { background: #a47bcf; box-shadow: 0 0 20px #a47bcf33; }
+
+  @keyframes barColorFlash {
+    0%   { filter: brightness(1); }
+    30%  { filter: brightness(1.5); }
+    100% { filter: brightness(1); }
+  }
+  .bar-color-flash { animation: barColorFlash 0.4s ease-out forwards; }
+
+  .code-line.highlight {
+    background: rgba(212,162,78,0.08);
+    border-left-color: #d4a24e !important;
+  }
+
+  .tree-node.active {
+    background: rgba(212,162,78,0.06);
+    border-left-color: #d4a24e !important;
+  }
+  .tree-node.done {
+    border-left-color: #a47bcf !important;
+  }
+
+  .btn-ctrl {
+    padding: 8px 18px;
+    border: 1px solid #3d3b37;
+    border-radius: 2px;
+    background: #1c1c1a;
+    color: #f0ece4;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-ctrl:hover { background: #242422; border-color: #d4a24e; color: #d4a24e; }
+  .btn-ctrl:active { transform: scale(0.97); }
+  .btn-ctrl.active { background: #d4a24e; border-color: #d4a24e; color: #0e0e0d; }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 100px;
+    height: 2px;
+    background: #3d3b37;
+    outline: none;
+    border-radius: 1px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: #d4a24e;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .desc-box {
+    border-left: 2px solid #d4a24e;
+    padding: 14px 18px;
+    background: #141413;
+    font-size: 0.95rem;
+    line-height: 1.65;
+    color: #c8c4bb;
+    min-height: 72px;
+  }
+
+  .section-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #5a5650;
+    margin-bottom: 12px;
+  }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Header -->
+<header class="pt-10 pb-2 px-6 text-center">
+  <h1 class="font-display text-4xl md:text-5xl font-black tracking-tight text-ink" style="line-height:1.1">
+    Quicksort
+  </h1>
+  <p class="font-body text-ink-dim text-sm mt-2 tracking-wide">Wizualizacja algorytmu — krok po kroku</p>
+</header>
+
+<!-- Controls -->
+<div class="max-w-[1400px] mx-auto px-5 mt-6 mb-4">
+  <div class="flex flex-wrap items-center justify-center gap-3 bg-surface-raised border border-[#2a2a28] rounded-sm px-5 py-3">
+    <button class="btn-ctrl" id="btnReset" onclick="resetVis()">&#8634; Reset</button>
+    <button class="btn-ctrl" id="btnPrev" onclick="prevStep()">&#9664; Poprz.</button>
+    <button class="btn-ctrl" id="btnPlayPause" onclick="togglePlay()">&#9654; Odtwarzaj</button>
+    <button class="btn-ctrl" id="btnNext" onclick="nextStep()">Dalej &#9654;</button>
+    <div class="flex items-center gap-2 text-ink-dim text-xs font-medium ml-2">
+      <span>Wolniej</span>
+      <input type="range" id="speedSlider" min="1" max="10" value="5">
+      <span>Szybciej</span>
+    </div>
+    <div class="text-ink-faint text-xs font-mono ml-3 min-w-[80px] text-center" id="stepCounter">Krok 0 / 0</div>
+  </div>
+</div>
+
+<!-- Progress -->
+<div class="max-w-[1400px] mx-auto px-5 mb-5">
+  <div class="h-[2px] bg-[#2a2a28] rounded-full overflow-hidden">
+    <div class="h-full bg-amber rounded-full transition-all duration-300" id="progressFill" style="width:0%"></div>
+  </div>
+</div>
+
+<!-- Main Grid -->
+<div class="max-w-[1400px] mx-auto px-5 pb-10 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5">
+
+  <!-- Left: Visualization -->
+  <div class="flex flex-col gap-5">
+
+    <!-- Bars -->
+    <div class="bg-surface border border-[#2a2a28] rounded-sm p-5">
+      <div class="section-label">Tablica</div>
+      <div class="flex justify-center items-end gap-2 min-h-[240px] pt-2" id="arrayContainer"></div>
+      <div class="flex flex-wrap gap-5 justify-center mt-5 text-[0.7rem] text-ink-dim font-medium">
+        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-bar-idle inline-block"></span>Nieaktywny</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-bar-pivot inline-block"></span>Pivot</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-bar-comparing inline-block"></span>Porównywany</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-bar-smaller inline-block"></span>Mniejsze</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-bar-larger inline-block"></span>Większe</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-bar-sorted inline-block"></span>Posortowany</span>
+      </div>
+    </div>
+
+    <!-- Recursion Tree -->
+    <div class="bg-surface border border-[#2a2a28] rounded-sm p-5">
+      <div class="section-label">Drzewo rekursji</div>
+      <div class="max-h-[260px] overflow-y-auto flex flex-col gap-1" id="treeContainer">
+        <div class="text-ink-faint text-sm">Drzewo pojawi się po rozpoczęciu.</div>
+      </div>
+    </div>
+
+    <!-- Description -->
+    <div class="desc-box" id="descriptionBox">
+      Naciśnij <strong class="text-ink">„Dalej"</strong> lub <strong class="text-ink">„Odtwarzaj"</strong>, aby rozpocząć wizualizację algorytmu Quicksort.
+    </div>
+  </div>
+
+  <!-- Right: Code Panel -->
+  <div class="bg-surface border border-[#2a2a28] rounded-sm p-5">
+    <div class="section-label">Kod Python</div>
+    <div class="font-mono text-[0.78rem] leading-[1.8] overflow-x-auto" id="codeBlock"></div>
+  </div>
+
+</div>
+
+<script>
+// ==================== CODE SYNTAX ====================
+const codeLines = [
+  { ln: 1,  html: '<span class="text-[#a47bcf]">def</span> <span class="text-[#7ba4d4]">szybkie_sortowanie</span>(<span class="text-ink">lista</span>):' },
+  { ln: 2,  html: '    <span class="text-[#a47bcf]">if</span> <span class="text-[#7ba4d4]">len</span>(<span class="text-ink">lista</span>) <= <span class="text-amber">1</span>:' },
+  { ln: 3,  html: '        <span class="text-[#a47bcf]">return</span> <span class="text-ink">lista</span>' },
+  { ln: 4,  html: '' },
+  { ln: 5,  html: '    <span class="text-ink">pivot</span> = <span class="text-ink">lista</span>[<span class="text-amber">0</span>]' },
+  { ln: 6,  html: '' },
+  { ln: 7,  html: '    <span class="text-ink">mniejsze</span> = [<span class="text-ink">liczba</span> <span class="text-[#a47bcf]">for</span> <span class="text-ink">liczba</span> <span class="text-[#a47bcf]">in</span> <span class="text-ink">lista</span>[<span class="text-amber">1</span>:] <span class="text-[#a47bcf]">if</span> <span class="text-ink">liczba</span> <= <span class="text-ink">pivot</span>]' },
+  { ln: 8,  html: '    <span class="text-ink">wieksze</span>  = [<span class="text-ink">liczba</span> <span class="text-[#a47bcf]">for</span> <span class="text-ink">liczba</span> <span class="text-[#a47bcf]">in</span> <span class="text-ink">lista</span>[<span class="text-amber">1</span>:] <span class="text-[#a47bcf]">if</span> <span class="text-ink">liczba</span> > <span class="text-ink">pivot</span>]' },
+  { ln: 9,  html: '' },
+  { ln: 10, html: '    <span class="text-[#a47bcf]">return</span> <span class="text-[#7ba4d4]">szybkie_sortowanie</span>(<span class="text-ink">mniejsze</span>) + [<span class="text-ink">pivot</span>] + <span class="text-[#7ba4d4]">szybkie_sortowanie</span>(<span class="text-ink">wieksze</span>)' },
+  { ln: 11, html: '' },
+  { ln: 12, html: '<span class="text-ink">liczby_do_posortowania</span> = [<span class="text-amber">9</span>, <span class="text-amber">1</span>, <span class="text-amber">2</span>, <span class="text-amber">4</span>, <span class="text-amber">5</span>, <span class="text-amber">7</span>, <span class="text-amber">8</span>, <span class="text-amber">6</span>, <span class="text-amber">3</span>]' },
+  { ln: 13, html: '<span class="text-ink">wynik</span> = <span class="text-[#7ba4d4]">szybkie_sortowanie</span>(<span class="text-ink">liczby_do_posortowania</span>)' },
+  { ln: 14, html: '' },
+  { ln: 15, html: '<span class="text-[#7ba4d4]">print</span>(<span class="text-ink">wynik</span>)' },
+];
+
+function renderCode(highlightLines) {
+  const block = document.getElementById('codeBlock');
+  block.innerHTML = codeLines.map(cl => {
+    const hl = highlightLines && highlightLines.includes(cl.ln) ? ' highlight' : '';
+    return `<span class="code-line block py-0.5 px-3 border-l-2 border-transparent transition-all duration-300${hl}"><span class="inline-block w-6 text-right mr-3 text-ink-faint opacity-40 select-none">${cl.ln}</span>${cl.html}</span>`;
+  }).join('\n');
+}
+
+// ==================== STEP GENERATION ====================
+const INITIAL_ARRAY = [9, 1, 2, 4, 5, 7, 8, 6, 3];
+let steps = [];
+let currentStep = -1;
+let playing = false;
+let playTimer = null;
+
+function generateSteps() {
+  steps = [];
+  const arr = [...INITIAL_ARRAY];
+  let treeNodes = [];
+  let treeIdCounter = 0;
+  let sortedPositions = new Set();
+
+  steps.push({
+    array: [...arr],
+    highlights: {},
+    description: 'Tablica początkowa: [' + arr.join(', ') + ']. Rozpoczynamy sortowanie Quicksort.',
+    codeLines: [12, 13],
+    tree: [],
+    sortedSet: new Set()
+  });
+
+  function qs(arr, globalOffset, depth, treeNodes) {
+    const treeId = treeIdCounter++;
+    const indent = depth;
+
+    if (arr.length <= 1) {
+      treeNodes.push({ id: treeId, depth: indent, array: [...arr], status: 'done', label: `szybkie_sortowanie([${arr.join(', ')}])` });
+
+      if (arr.length === 1) {
+        sortedPositions.add(globalOffset);
+        const hl = {};
+        sortedPositions.forEach(p => hl[p] = 'sorted');
+        steps.push({
+          array: [...INITIAL_ARRAY],
+          highlights: { ...hl },
+          description: `Przypadek bazowy: [${arr[0]}] — lista jednoelementowa, już posortowana.`,
+          codeLines: [2, 3],
+          tree: treeNodes.map(n => ({ ...n })),
+          sortedSet: new Set(sortedPositions)
+        });
+      } else {
+        steps.push({
+          array: [...INITIAL_ARRAY],
+          highlights: Object.fromEntries([...sortedPositions].map(p => [p, 'sorted'])),
+          description: 'Przypadek bazowy: pusta lista [], nic do sortowania.',
+          codeLines: [2, 3],
+          tree: treeNodes.map(n => ({ ...n })),
+          sortedSet: new Set(sortedPositions)
+        });
+      }
+      return arr;
+    }
+
+    treeNodes.push({ id: treeId, depth: indent, array: [...arr], status: 'active', label: `szybkie_sortowanie([${arr.join(', ')}])` });
+
+    const pivot = arr[0];
+    const pivotGlobal = globalOffset;
+
+    {
+      const hl = {};
+      hl[pivotGlobal] = 'pivot';
+      sortedPositions.forEach(p => hl[p] = 'sorted');
+      steps.push({
+        array: [...INITIAL_ARRAY],
+        highlights: { ...hl },
+        description: `Wybieramy pivot: ${pivot} (pierwszy element listy [${arr.join(', ')}])`,
+        codeLines: [5],
+        tree: treeNodes.map(n => ({ ...n })),
+        sortedSet: new Set(sortedPositions)
+      });
+    }
+
+    const smaller = [];
+    const larger = [];
+    const smallerGlobal = [];
+    const largerGlobal = [];
+
+    for (let i = 1; i < arr.length; i++) {
+      const gi = globalOffset + i;
+      const val = arr[i];
+
+      {
+        const hl = {};
+        hl[pivotGlobal] = 'pivot';
+        hl[gi] = 'comparing';
+        smallerGlobal.forEach(sg => hl[sg] = 'smaller');
+        largerGlobal.forEach(lg => hl[lg] = 'larger');
+        sortedPositions.forEach(p => hl[p] = 'sorted');
+        const group = val <= pivot ? 'MNIEJSZE' : 'WIĘKSZE';
+        steps.push({
+          array: [...INITIAL_ARRAY],
+          highlights: { ...hl },
+          description: `Porównujemy ${val} z pivotem ${pivot}: ${val} ${val <= pivot ? '\u2264' : '>'} ${pivot} \u2192 trafia do grupy ${group}`,
+          codeLines: [7, 8],
+          tree: treeNodes.map(n => ({ ...n })),
+          sortedSet: new Set(sortedPositions)
+        });
+      }
+
+      if (val <= pivot) {
+        smaller.push(val);
+        smallerGlobal.push(gi);
+      } else {
+        larger.push(val);
+        largerGlobal.push(gi);
+      }
+
+      {
+        const hl = {};
+        hl[pivotGlobal] = 'pivot';
+        smallerGlobal.forEach(sg => hl[sg] = 'smaller');
+        largerGlobal.forEach(lg => hl[lg] = 'larger');
+        sortedPositions.forEach(p => hl[p] = 'sorted');
+        steps.push({
+          array: [...INITIAL_ARRAY],
+          highlights: { ...hl },
+          description: `Mniejsze/równe: [${smaller.join(', ')}] | Pivot: ${pivot} | Większe: [${larger.join(', ')}]`,
+          codeLines: [7, 8],
+          tree: treeNodes.map(n => ({ ...n })),
+          sortedSet: new Set(sortedPositions)
+        });
+      }
+    }
+
+    {
+      const hl = {};
+      hl[pivotGlobal] = 'pivot';
+      smallerGlobal.forEach(sg => hl[sg] = 'smaller');
+      largerGlobal.forEach(lg => hl[lg] = 'larger');
+      sortedPositions.forEach(p => hl[p] = 'sorted');
+      steps.push({
+        array: [...INITIAL_ARRAY],
+        highlights: { ...hl },
+        description: `Podział zakończony! Mniejsze: [${smaller.join(', ')}] | Pivot: ${pivot} | Większe: [${larger.join(', ')}]. Teraz sortujemy rekurencyjnie.`,
+        codeLines: [10],
+        tree: treeNodes.map(n => ({ ...n })),
+        sortedSet: new Set(sortedPositions)
+      });
+    }
+
+    const newOrder = [...smaller, pivot, ...larger];
+    for (let i = 0; i < newOrder.length; i++) {
+      INITIAL_ARRAY[globalOffset + i] = newOrder[i];
+    }
+
+    {
+      const hl = {};
+      for (let i = 0; i < smaller.length; i++) hl[globalOffset + i] = 'smaller';
+      hl[globalOffset + smaller.length] = 'pivot';
+      for (let i = 0; i < larger.length; i++) hl[globalOffset + smaller.length + 1 + i] = 'larger';
+      sortedPositions.forEach(p => hl[p] = 'sorted');
+      steps.push({
+        array: [...INITIAL_ARRAY],
+        highlights: { ...hl },
+        description: `Przestawiamy: [${smaller.join(', ')}] + [${pivot}] + [${larger.join(', ')}]`,
+        codeLines: [10],
+        tree: treeNodes.map(n => ({ ...n })),
+        sortedSet: new Set(sortedPositions)
+      });
+    }
+
+    const sortedSmaller = qs(smaller, globalOffset, depth + 1, treeNodes);
+
+    sortedPositions.add(globalOffset + smaller.length);
+    {
+      const hl = {};
+      sortedPositions.forEach(p => hl[p] = 'sorted');
+      steps.push({
+        array: [...INITIAL_ARRAY],
+        highlights: { ...hl },
+        description: `Pivot ${pivot} jest teraz na swojej końcowej pozycji.`,
+        codeLines: [10],
+        tree: treeNodes.map(n => ({ ...n })),
+        sortedSet: new Set(sortedPositions)
+      });
+    }
+
+    const sortedLarger = qs(larger, globalOffset + smaller.length + 1, depth + 1, treeNodes);
+
+    const tn = treeNodes.find(n => n.id === treeId);
+    if (tn) tn.status = 'done';
+
+    const merged = [...sortedSmaller, pivot, ...sortedLarger];
+    for (let i = 0; i < merged.length; i++) {
+      INITIAL_ARRAY[globalOffset + i] = merged[i];
+      sortedPositions.add(globalOffset + i);
+    }
+
+    {
+      const hl = {};
+      sortedPositions.forEach(p => hl[p] = 'sorted');
+      steps.push({
+        array: [...INITIAL_ARRAY],
+        highlights: { ...hl },
+        description: `Łączenie: [${sortedSmaller.join(', ')}] + [${pivot}] + [${sortedLarger.join(', ')}] = [${merged.join(', ')}]`,
+        codeLines: [10],
+        tree: treeNodes.map(n => ({ ...n })),
+        sortedSet: new Set(sortedPositions)
+      });
+    }
+
+    return merged;
+  }
+
+  for (let i = 0; i < INITIAL_ARRAY.length; i++) INITIAL_ARRAY[i] = [9,1,2,4,5,7,8,6,3][i];
+
+  qs([...INITIAL_ARRAY], 0, 0, treeNodes);
+
+  steps.push({
+    array: [...INITIAL_ARRAY],
+    highlights: Object.fromEntries(INITIAL_ARRAY.map((_, i) => [i, 'sorted'])),
+    description: 'Sortowanie zakończone! Lista jest w pełni posortowana: [' + INITIAL_ARRAY.join(', ') + ']',
+    codeLines: [15],
+    tree: treeNodes.map(n => ({ ...n, status: 'done' })),
+    sortedSet: new Set(INITIAL_ARRAY.map((_, i) => i))
+  });
+}
+
+// ==================== RENDERING ====================
+let prevValueClass = null; // { value: class }
+let barWrappers = [];
+
+function renderArray(step) {
+  const container = document.getElementById('arrayContainer');
+  const arr = step.array;
+  const maxVal = Math.max(...arr);
+  const isFirstRender = barWrappers.length === 0;
+
+  if (isFirstRender) {
+    container.innerHTML = '';
+    prevValueClass = {};
+    for (let i = 0; i < arr.length; i++) {
+      const val = arr[i];
+      const cls = step.highlights[i] || 'idle';
+      const height = 30 + (val / maxVal) * 180;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'flex flex-col items-center gap-1.5';
+
+      const bar = document.createElement('div');
+      bar.className = `bar ${cls}`;
+      bar.style.height = height + 'px';
+
+      const label = document.createElement('span');
+      label.className = 'font-mono font-bold text-sm text-ink select-none';
+      label.textContent = val;
+
+      wrapper.appendChild(bar);
+      wrapper.appendChild(label);
+      container.appendChild(wrapper);
+      barWrappers.push({ wrapper, bar, label, value: val, cls });
+      prevValueClass[val] = cls;
+    }
+    return;
+  }
+
+  // FLIP: FIRST — record old positions
+  const oldRects = barWrappers.map(w => w.wrapper.getBoundingClientRect());
+  const oldLefts = oldRects.map(r => r.left);
+
+  // Update bar styles (height, class) on existing elements BEFORE reorder
+  // Build new value→class map
+  const newValueClass = {};
+  for (let i = 0; i < arr.length; i++) {
+    const cls = step.highlights[i] || 'idle';
+    newValueClass[arr[i]] = cls;
+  }
+
+  for (let i = 0; i < arr.length; i++) {
+    const cls = step.highlights[i] || 'idle';
+    const height = 30 + (arr[i] / maxVal) * 180;
+    barWrappers[i].bar.className = `bar ${cls}`;
+    barWrappers[i].bar.style.height = height + 'px';
+    barWrappers[i].label.textContent = arr[i];
+    barWrappers[i].value = arr[i];
+    barWrappers[i].cls = cls;
+  }
+
+  // Reorder DOM nodes to match new array order
+  const remaining = [...barWrappers];
+  const reordered = [];
+  for (let i = 0; i < arr.length; i++) {
+    const idx = remaining.findIndex(w => w.value === arr[i]);
+    if (idx >= 0) reordered.push(remaining.splice(idx, 1)[0]);
+  }
+  barWrappers = reordered;
+  for (const w of barWrappers) container.appendChild(w.wrapper);
+
+  // Measure new positions AFTER reorder
+  const newRects = barWrappers.map(w => w.wrapper.getBoundingClientRect());
+
+  // INVERT + PLAY — animate bars that moved
+  let delay = 0;
+  for (let i = 0; i < barWrappers.length; i++) {
+    const dx = oldLefts[i] - newRects[i].left;
+    const moved = Math.abs(dx) >= 1;
+
+    if (moved) {
+      const w = barWrappers[i].wrapper;
+      w.style.zIndex = '10';
+      w.animate([
+        { transform: `translateX(${dx}px)`, offset: 0 },
+        { transform: `translateX(${dx * 0.15}px)`, offset: 0.65 },
+        { transform: 'translateX(-3px)', offset: 0.85 },
+        { transform: 'translateX(0)', offset: 1 }
+      ], {
+        duration: 380,
+        delay: delay,
+        easing: 'ease-out',
+        fill: 'none'
+      }).onfinish = () => { w.style.zIndex = ''; };
+      delay += 80;
+    }
+  }
+
+  // Color flash — per bar value, independent of reorder
+  for (const w of barWrappers) {
+    const val = w.value;
+    const oldCls = prevValueClass[val];
+    const newCls = newValueClass[val];
+    if (oldCls && oldCls !== newCls) {
+      w.bar.classList.remove('bar-color-flash');
+      void w.bar.offsetWidth;
+      w.bar.classList.add('bar-color-flash');
+    }
+  }
+
+  prevValueClass = newValueClass;
+}
+
+function renderTree(treeData) {
+  const container = document.getElementById('treeContainer');
+  if (!treeData || treeData.length === 0) {
+    container.innerHTML = '<div class="text-ink-faint text-sm">Drzewo pojawi się po rozpoczęciu.</div>';
+    return;
+  }
+
+  let html = '';
+  for (const node of treeData) {
+    const indentPx = node.depth * 20;
+    const statusCls = node.status === 'active' ? 'active' : 'done';
+    const arrow = node.depth > 0 ? '\u2514\u2500 ' : '';
+    html += `<div class="tree-node flex items-center gap-2 py-1.5 px-2.5 rounded-sm text-[0.78rem] font-mono bg-surface-overlay border-l-[3px] border-[#2a2a28] transition-all duration-300 ${statusCls}" style="margin-left:${indentPx}px">
+      <span>${arrow}${node.label}</span>
+      ${node.status === 'done'
+        ? '<span class="text-bar-sorted ml-auto">\u2713</span>'
+        : '<span class="text-amber ml-auto">\u25B6</span>'}
+    </div>`;
+  }
+  container.innerHTML = html;
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderStep() {
+  if (currentStep < 0 || currentStep >= steps.length) return;
+  const step = steps[currentStep];
+
+  renderArray(step);
+  renderCode(step.codeLines);
+  renderTree(step.tree);
+
+  document.getElementById('descriptionBox').innerHTML = step.description;
+  document.getElementById('stepCounter').textContent = `Krok ${currentStep + 1} / ${steps.length}`;
+
+  const pct = ((currentStep + 1) / steps.length) * 100;
+  document.getElementById('progressFill').style.width = pct + '%';
+
+  document.getElementById('btnPrev').style.opacity = currentStep === 0 ? '0.35' : '1';
+  document.getElementById('btnNext').style.opacity = currentStep === steps.length - 1 ? '0.35' : '1';
+}
+
+// ==================== CONTROLS ====================
+function nextStep() {
+  if (currentStep < steps.length - 1) {
+    currentStep++;
+    renderStep();
+  } else if (playing) {
+    togglePlay();
+  }
+}
+
+function prevStep() {
+  if (currentStep > 0) {
+    currentStep--;
+    renderStep();
+  }
+}
+
+function togglePlay() {
+  playing = !playing;
+  const btn = document.getElementById('btnPlayPause');
+  if (playing) {
+    btn.innerHTML = '&#10074;&#10074; Pauza';
+    btn.classList.add('active');
+    scheduleNext();
+  } else {
+    btn.innerHTML = '&#9654; Odtwarzaj';
+    btn.classList.remove('active');
+    clearTimeout(playTimer);
+  }
+}
+
+function scheduleNext() {
+  if (!playing) return;
+  const speed = document.getElementById('speedSlider').value;
+  const delay = 2000 - (speed - 1) * 180;
+  playTimer = setTimeout(() => {
+    if (playing) {
+      nextStep();
+      if (currentStep < steps.length - 1) {
+        scheduleNext();
+      } else {
+        togglePlay();
+      }
+    }
+  }, delay);
+}
+
+function resetVis() {
+  if (playing) togglePlay();
+  const orig = [9, 1, 2, 4, 5, 7, 8, 6, 3];
+  for (let i = 0; i < orig.length; i++) INITIAL_ARRAY[i] = orig[i];
+  prevValueClass = null;
+  barWrappers = [];
+  generateSteps();
+  currentStep = 0;
+  renderStep();
+}
+
+// ==================== KEYBOARD ====================
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === 'n') nextStep();
+  else if (e.key === 'ArrowLeft' || e.key === 'p') prevStep();
+  else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'r') resetVis();
+});
+
+// ==================== INIT ====================
+generateSteps();
+currentStep = 0;
+renderStep();
+renderCode([]);
+</script>
+</body>
+</html>
